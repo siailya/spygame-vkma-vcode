@@ -675,7 +675,7 @@ const App = () => {
                                         <h1 className="countdown mb-0 mt-5">
                                             {pad(Math.floor(countDownSeconds / 60), 2)}:{pad(countDownSeconds - Math.floor(countDownSeconds / 60) * 60, 2)}
                                         </h1>
-                                        <span>До конца игры</span>
+                                        <span className="mb-5">До конца игры</span>
                                     </Div>
                                 </Card>
                             </Div>
