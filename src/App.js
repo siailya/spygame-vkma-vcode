@@ -114,6 +114,10 @@ const App = () => {
                 setCountDownSeconds(prev => prev - 1)
             }, 1000)
 
+            setTimeout(() => {
+                flashLight()
+            }, (onlineGame.players.length * 60 - 10) * 1000)
+
             setCountDownInterval(countDownIntervalId)
             setActivePanel("online_play")
         })
