@@ -105,7 +105,7 @@ const App = () => {
             setRole(role)
         })
 
-        socket.on("game started", ({location, timer}) => {
+        socket.on("game started", ({location, timer, playersCount}) => {
             console.log("game started", location, timer)
             setOfflineLocation(location)
             setCountDownSeconds(timer / 1000)
@@ -114,9 +114,11 @@ const App = () => {
                 setCountDownSeconds(prev => prev - 1)
             }, 1000)
 
-            setTimeout(() => {
-                flashLight()
-            }, (onlineGame.players.length * 60 - 10) * 1000)
+            if (onlineGame?.players) {
+                setTimeout(() => {
+                    flashLight()
+                }, timer - 10000)
+            }
 
             setCountDownInterval(countDownIntervalId)
             setActivePanel("online_play")
@@ -127,6 +129,10 @@ const App = () => {
 
             setOnlineGame(playersData)
             setActivePanel("online_results")
+        })
+
+        socket.on("disconnect", () => {
+            console.log("disconnected!")
         })
 
         bridge.send("VKWebAppGetUserInfo").then(r => {
