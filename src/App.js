@@ -1,19 +1,24 @@
-import React, {useEffect, useState} from "react";
+import React, {useEffect, useRef, useState} from "react";
 import {
     AppRoot,
+    Avatar,
     Button,
     Caption,
     Card,
     Div,
     FixedLayout,
     FormItem,
+    Group,
+    Header,
     Headline,
     Input,
     ModalCard,
     ModalRoot,
     Panel,
     PanelHeader,
-    PanelHeaderButton, Separator,
+    PanelHeaderBack,
+    PanelHeaderButton,
+    Separator,
     SimpleCell,
     SplitCol,
     SplitLayout,
@@ -36,6 +41,7 @@ import OnBoardPanel from "./panels/OnBoardPanel";
 import bridge from "@vkontakte/vk-bridge";
 import locations from "./locations";
 import LocationCard from "./components/LocationCard";
+import io from "socket.io-client";
 
 const App = () => {
     const {viewWidth} = useAdaptivity();
@@ -55,6 +61,13 @@ const App = () => {
     const [countDownInterval, setCountDownInterval] = useState(null)
     const [countDownTimer, setCountDownTimer] = useState(null)
     const [flashLightTimer, setFlashLightTimer] = useState(null)
+    const [socket, setSocket] = useState(null)
+    const [user, setUser] = useState({first_name: "test"})
+    const [onlineGame, setOnlineGame] = useState({})
+    const [onlineGameRoom, setOnlineGameRoom] = useState({})
+    const [roomError, setRoomError] = useState(false)
+    const [role, setRole] = useState(false)
+    const roomNumber = useRef(null)
 
 
     const goTo = (panelName) => {
@@ -62,6 +75,60 @@ const App = () => {
     }
 
     useEffect(() => {
+        const socket = io("https://vkma.vcode.flint3s.online", {forceNew: true})
+
+        setSocket(socket)
+
+        socket.on("connection", (msg) => {
+            console.log("Connected to socket io")
+        })
+
+        socket.on("goto online", () => {
+            setActivePanel("online")
+        })
+
+        socket.on("room connected", ({room, roomInfo}) => {
+            setOnlineGameRoom(room)
+            setOnlineGame(roomInfo)
+            setActivePanel("wait_online")
+        })
+
+        socket.on("room not found", () => {
+            setRoomError(true)
+        })
+
+        socket.on("update game", ({roomInfo}) => {
+            setOnlineGame(roomInfo)
+        })
+
+        socket.on("set role", (role) => {
+            setRole(role)
+        })
+
+        socket.on("game started", ({location, timer}) => {
+            console.log("game started", location, timer)
+            setOfflineLocation(location)
+            setCountDownSeconds(timer / 1000)
+
+            const countDownIntervalId = setInterval(() => {
+                setCountDownSeconds(prev => prev - 1)
+            }, 1000)
+
+            setCountDownInterval(countDownIntervalId)
+            setActivePanel("online_play")
+        })
+
+        socket.on("game end", (playersData) => {
+            clearInterval(countDownInterval)
+
+            setOnlineGame(playersData)
+            setActivePanel("online_results")
+        })
+
+        bridge.send("VKWebAppGetUserInfo").then(r => {
+            setUser(r)
+        })
+
         bridge.send("VKWebAppStorageGet", {keys: ["onboarded"]}).then(r => {
             if (!r.keys[0].value) {
                 bridge.send("VKWebAppStorageSet", {
@@ -184,6 +251,10 @@ const App = () => {
         console.log("stopGame")
     }
 
+    const connectToRoom = () => {
+        socket.emit("connect room", {room: roomNumber.current.value, user})
+    }
+
     const modal = (
         <ModalRoot activeModal={activeModal}>
             <ModalCard id="add-locations" onClose={() => setActiveModal("")}>
@@ -294,6 +365,7 @@ const App = () => {
                                         size="l"
                                         className="text-center"
                                         stretched
+                                        onClick={() => socket.emit("start online", user)}
                                         before={<Icon56WifiOutline width="32"/>}
                                     >
 
@@ -423,7 +495,8 @@ const App = () => {
                                                                         :
                                                                         <div>
                                                                             <h1>Ты - мирный житель!</h1>
-                                                                            <h3 className="mt-1" style={{color: "var(--button_primary_background)"}}>Локация
+                                                                            <h3 className="mt-1"
+                                                                                style={{color: "var(--button_primary_background)"}}>Локация
                                                                                 - {offlineLocation}</h3>
                                                                             <span>Задавай остальным вопросы, чтобы выявить шпиона!</span>
                                                                         </div>
@@ -479,7 +552,174 @@ const App = () => {
                                     </Div>
                                 </Card>
 
-                                <Button size="l" stretched className="mt-4" onClick={() => setActivePanel("main")}>На главную</Button>
+                                <Button size="l" stretched className="mt-4" onClick={() => setActivePanel("main")}>На
+                                    главную</Button>
+                            </Div>
+                        </Panel>
+                        <Panel id="online">
+                            <PanelHeader left={<PanelHeaderBack onClick={() => setActivePanel("main")}/>}>Онлайн
+                                игра</PanelHeader>
+
+                            <Div>
+                                <Card className="text-center mb-3" mode="shadow">
+                                    <Div>
+                                        <Headline weight="semibold">Играйте онлайн!</Headline>
+
+                                        Подключайтесь к комнате друга или создавайте свою и приглашайте друзей!
+                                    </Div>
+                                </Card>
+
+                                <Card mode="shadow" className="mb-2">
+                                    <FormItem top="Номер комнаты">
+                                        <Input placeholder="123123" getRef={roomNumber}/>
+                                        <div className="text-center">
+                                            {roomError && "Ошибка подключения! Комнаты нет или игра уже началась!"}
+                                        </div>
+                                    </FormItem>
+                                    <Div>
+                                        <Button size="l" stretched onClick={connectToRoom}>
+                                            Подключиться
+                                        </Button>
+                                    </Div>
+                                </Card>
+
+                                <Card mode="shadow" className="text-center">
+                                    <Div>
+                                        <Headline weight="semibold" className="mb-2">
+                                            Создать свою комнату
+                                        </Headline>
+
+                                        <Button size="l" stretched onClick={() => socket.emit("create room", user)}>
+                                            Создать
+                                        </Button>
+                                    </Div>
+                                </Card>
+                            </Div>
+                        </Panel>
+                        <Panel id="wait_online">
+                            <PanelHeader
+                                left={<PanelHeaderBack onClick={() => {
+                                    setActivePanel("online");
+                                    socket.emit("leave");
+                                }}/>}>Комната</PanelHeader>
+
+                            <Div>
+                                <Card mode="shadow" className="text-center">
+                                    <Div>
+                                        <Headline weight="semibold" className="mb-4" style={{fontSize: "24px"}}>Комната
+                                            #{onlineGameRoom}</Headline>
+                                        <Button stretched mode="secondary"
+                                                onClick={() => navigator.clipboard.writeText(onlineGameRoom + "")}>Скопировать
+                                            номер комнаты</Button>
+                                        <Button size="l" className="mt-2" stretched
+                                                onClick={() => bridge.send("VKWebAppShare")}>Пригласить друзей</Button>
+                                    </Div>
+                                </Card>
+
+                                <Card mode="shadow" className="text-center">
+                                    <Div>
+                                        <Group header={<Header>Игроки в комнате</Header>}>
+                                            {
+                                                onlineGame?.players?.map(player => {
+                                                    return (
+                                                        <SimpleCell before={<Avatar src={player?.photo_100}/>}>
+                                                            {player?.first_name}
+                                                        </SimpleCell>
+                                                    )
+                                                })
+                                            }
+                                        </Group>
+                                    </Div>
+                                </Card>
+                            </Div>
+
+                            <FixedLayout vertical="bottom">
+                                <Div>
+                                    <Button
+                                        disabled={onlineGame?.players?.length < 3}
+                                        onClick={() => socket.emit("start game", shuffle([...locations, ...userLocations])[0])}
+                                        stretched size="l">Начать игру</Button>
+                                </Div>
+                            </FixedLayout>
+                        </Panel>
+                        <Panel id="online_play">
+                            <PanelHeader>Играем!</PanelHeader>
+
+                            <Div>
+                                <Card mode="shadow" className="text-center">
+                                    <Div>
+
+                                        {
+                                            role ?
+                                                <>
+                                                    <Headline weight="semibold" style={{fontSize: "24px"}}>Ты -
+                                                        Шпион!</Headline>
+                                                    <div className="mt-3">
+                                                        Выясни, что за локация была загадана и не выдавай того, что ты
+                                                        шпион!
+                                                    </div>
+                                                </>
+                                                :
+                                                <>
+                                                    <Headline weight="semibold" style={{fontSize: "24px"}}>Ты -
+                                                        Мирный!</Headline>
+                                                    <h3>Локация - {offlineLocation}</h3>
+
+                                                    <div className="mt-3">
+                                                        Выясни, что за локация была загадана и не выдавай того, что ты
+                                                        шпион!
+                                                    </div>
+                                                </>
+                                        }
+
+                                        <h1 className="countdown mb-0 mt-5">
+                                            {pad(Math.floor(countDownSeconds / 60), 2)}:{pad(countDownSeconds - Math.floor(countDownSeconds / 60) * 60, 2)}
+                                        </h1>
+                                        <span>До конца игры</span>
+                                    </Div>
+                                </Card>
+                            </Div>
+                        </Panel>
+                        <Panel id="online_results">
+                            <PanelHeader left={<PanelHeaderButton
+                                onClick={() => setActivePanel("main")}><Icon28HomeOutline/></PanelHeaderButton>}>Результаты
+                                игры</PanelHeader>
+
+                            <Div className="text-center">
+                                <Card mode="shadow">
+                                    <Div>
+                                        <Headline weight="semibold" style={{fontSize: "24px"}}>Игра окончена!</Headline>
+
+                                        <h3>Локация - {offlineLocation}</h3>
+
+                                        <FormItem top="Игроки">
+                                            {
+                                                onlineGame?.players?.map(pl => {
+                                                    return (
+                                                        <>
+                                                            <SimpleCell
+                                                                disabled
+                                                                after={<>
+                                                                    {pl?.role ? "Шпион" : "Мирный"}
+                                                                </>}
+                                                            >
+                                                                {pl?.first_name}
+                                                            </SimpleCell>
+                                                            <Separator/>
+                                                        </>
+                                                    )
+                                                })
+                                            }
+                                        </FormItem>
+                                    </Div>
+                                </Card>
+
+                                <Button size="l" stretched className="mt-4" onClick={() => {
+                                    setActivePanel("main");
+                                    socket.emit("leave");
+                                }
+                                }>На
+                                    главную</Button>
                             </Div>
                         </Panel>
                     </View>
